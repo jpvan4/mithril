@@ -1,14 +1,10 @@
-extern crate argon2;
-
-
+use argon2::{Algorithm, Argon2, Block, ParamsBuilder, Version};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use std::arch::x86_64::{
     _mm_prefetch,
     _MM_HINT_NTA
 };
-
-use self::argon2::block::Block;
 
 use super::super::byte_string;
 use super::superscalar::{Blake2Generator, ScProgram};
@@ -19,7 +15,6 @@ const RANDOMX_ARGON_SALT: &[u8; 8] = b"RandomX\x03";
 const RANDOMX_ARGON_ITERATIONS: u32 = 3;
 const RANDOMX_CACHE_ACCESSES: usize = 8;
 
-const ARGON2_SYNC_POINTS: u32 = 4;
 const ARGON_BLOCK_SIZE: u32 = 1024;
 
 pub const CACHE_LINE_SIZE: u64 = 64;
@@ -50,10 +45,19 @@ impl SeedMemory {
 
     /// Creates a new initialised seed memory.
     pub fn new_initialised(key: &[u8]) -> SeedMemory {
-        let mut mem = argon2::memory::Memory::new(RANDOMX_ARGON_LANES, RANDOMX_ARGON_MEMORY);
-        let context = &create_argon_context(key);
-        argon2::core::initialize(context, &mut mem);
-        argon2::core::fill_memory_blocks(context, &mut mem);
+        let params = ParamsBuilder::new()
+            .m_cost(RANDOMX_ARGON_MEMORY)
+            .t_cost(RANDOMX_ARGON_ITERATIONS)
+            .p_cost(RANDOMX_ARGON_LANES)
+            .build()
+            .expect("invalid Argon2 parameters");
+
+        let argon2 = Argon2::new(Algorithm::Argon2d, Version::V0x13, params);
+
+        let mut blocks = vec![Block::default(); RANDOMX_ARGON_MEMORY as usize];
+        argon2
+            .fill_memory(key, RANDOMX_ARGON_SALT.as_ref(), &mut blocks)
+            .expect("argon2 fill_memory failed");
 
         let mut programs = Vec::with_capacity(RANDOMX_CACHE_ACCESSES);
         let mut gen = Blake2Generator::new(key, 0);
@@ -62,32 +66,9 @@ impl SeedMemory {
         }
 
         SeedMemory {
-            blocks: mem.blocks,
+            blocks: blocks.into_boxed_slice(),
             programs,
         }
-    }
-}
-
-fn create_argon_context(key: &[u8]) -> argon2::context::Context {
-    let segment_length = RANDOMX_ARGON_MEMORY / (RANDOMX_ARGON_LANES * ARGON2_SYNC_POINTS);
-    let config = argon2::config::Config {
-        ad: &[],
-        hash_length: 0,
-        lanes: RANDOMX_ARGON_LANES,
-        mem_cost: RANDOMX_ARGON_MEMORY,
-        secret: &[],
-        thread_mode: argon2::ThreadMode::from_threads(1),
-        time_cost: RANDOMX_ARGON_ITERATIONS,
-        variant: argon2::Variant::Argon2d,
-        version: argon2::Version::Version13,
-    };
-    argon2::context::Context {
-        config,
-        memory_blocks: RANDOMX_ARGON_MEMORY,
-        pwd: key,
-        salt: RANDOMX_ARGON_SALT,
-        lane_length: segment_length * ARGON2_SYNC_POINTS,
-        segment_length,
     }
 }
 
@@ -97,7 +78,7 @@ fn mix_block_value(seed_mem: &SeedMemory, reg_value: u64, r: usize) -> u64 {
 
     let block_ix = byte_offset / ARGON_BLOCK_SIZE as u64;
     let block_v_ix = (byte_offset - (block_ix * ARGON_BLOCK_SIZE as u64)) / 8;
-    seed_mem.blocks[block_ix as usize][block_v_ix as usize]
+    seed_mem.blocks[block_ix as usize].as_ref()[block_v_ix as usize]
 }
 
 pub fn init_dataset_item(seed_mem: &SeedMemory, item_num: u64) -> [u64; 8] {

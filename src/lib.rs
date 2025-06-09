@@ -1,7 +1,6 @@
 #![crate_name = "mithril"]
 #![crate_type = "lib"]
 #![feature(repr_simd)]
-#![feature(integer_atomics)]
 
 #[macro_use]
 extern crate serde_derive;

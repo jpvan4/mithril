@@ -10,9 +10,9 @@ lazy_static! {
 
 #[test]
 fn test_seed_memory_new_initialised() {
-    assert_eq!(TEST_SEED_MEM.blocks[0][0], 0x191e0e1d23c02186);
-    assert_eq!(TEST_SEED_MEM.blocks[12253][29], 0xf1b62fe6210bf8b1);
-    assert_eq!(TEST_SEED_MEM.blocks[262143][127], 0x1f47f056d05cd99b);
+    assert_eq!(TEST_SEED_MEM.blocks[0].as_ref()[0], 0x191e0e1d23c02186);
+    assert_eq!(TEST_SEED_MEM.blocks[12253].as_ref()[29], 0xf1b62fe6210bf8b1);
+    assert_eq!(TEST_SEED_MEM.blocks[262143].as_ref()[127], 0x1f47f056d05cd99b);
 }
 
 #[test]
